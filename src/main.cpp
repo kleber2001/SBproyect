@@ -712,7 +712,7 @@ void secuenciaInfinita() {
     if (colorDetectado == colorObjetivo) {
       playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
       puntaje += 10;
-      mensajeestatico("Correcto!", ("Puntos: " + String(puntaje)).c_str());
+      mensajeestatico("Correcto!", ("Puntos: " + MB_String(puntaje)).c_str());
       Serial.println("Correcto!");
     } else {
       playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
