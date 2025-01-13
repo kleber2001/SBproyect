@@ -202,8 +202,8 @@ void enviardatofirebase(){
   currentEpoch+=timeOffset;
   setTime(currentEpoch);
 
-  String formatoFecha = String(year())+"-"+String(month())+"-"+String(day());
-  String formatoHora = String(hour())+":"+String(minute())+":"+String(second()); 
+  String formatoFecha = String(year())+"-"+MB_String(month())+"-"+String(day());
+  String formatoHora = String(hour())+":"+MB_String(minute())+":"+String(second()); 
 
   json.set("Tiempo actual", formatoFecha + MB_String(" ") + formatoHora );
 
@@ -370,17 +370,17 @@ bool verificarSecuencia(int cantidadColores) {
     Serial.print("Color detectado: "); Serial.print(colorDetectado);
     Serial.print(" | Color esperado: "); Serial.println(secuenciaColores[i]);
 
-    desplazarMensaje(("Color detectado: " + (String(colorDetectado))).c_str());
+    desplazarMensaje(("Color detectado: " + (MB_String(colorDetectado))).c_str());
 
     if (colorDetectado == secuenciaColores[i]) {
       int puntosGanados = (nivel == 1 ? 5 : (nivel == 2 ? 10 : 15));
       puntaje += puntosGanados;
 
       Serial.print("Correcto! Puntos ganados: "); Serial.println(puntosGanados);
-      mensajeestatico("Correcto!", ("Puntos: " + String(puntosGanados)).c_str());
+      mensajeestatico("Correcto!", ("Puntos: " + MB_String(puntosGanados)).c_str());
     } else {
-      mensajeestatico("Te equivocaste!", ("Puntaje: " + String(puntaje)).c_str());
-      desplazarMensaje(("Color esperado: " + (String(secuenciaColores[i]))).c_str());
+      mensajeestatico("Te equivocaste!", ("Puntaje: " + MB_String(puntaje)).c_str());
+      desplazarMensaje(("Color esperado: " + (MB_String(secuenciaColores[i]))).c_str());
       Serial.print("¡Te equivocaste! Puntuación final: "); Serial.println(puntaje);
       enviardatofirebase();
 
@@ -393,7 +393,7 @@ bool verificarSecuencia(int cantidadColores) {
   }
 
   Serial.print("¡Nivel superado! Puntuación total: "); Serial.println(puntaje);
-  mensajeestatico("Nivel superado!", ("Puntaje final: " + String(puntaje)).c_str()); 
+  mensajeestatico("Nivel superado!", ("Puntaje final: " + MB_String(puntaje)).c_str()); 
   handlepuntos();
   enviardatofirebase();
   return true;  // Nivel completado correctamente
