@@ -26,6 +26,7 @@ const int OUT = 27;
 #define BOTON_MODO 2   // Cambiar modo (boton amarillo)
 #define BOTON_JUGAR 4  // Confirmar selección (boton verde)
 #define BUZZER_PIN 12 // Pin donde conectas el buzzer
+#define LED_ENCENDIDO 15  // (led verde)
 
 #define FIREBASE_HOST "appjuego-3a808-default-rtdb.firebaseio.com"
 #define FIREBASE_AUTH "AIzaSyCZo0tb8khts6Yjp5d_BR69fdqPPbrygbI"
@@ -50,10 +51,6 @@ bool botonSensarPresionado = false;
 bool botonJugarPresionado = false; // Variables para verificar cambios de estado
 volatile bool actualizarModo = false; // Indica si se debe actualizar el modo
 volatile bool iniciarJuegoFlag = false; // Bandera para iniciar el juego
-volatile bool reproduccionActiva = false; // Bandera para activar/desactivar la reproducción //AGG
-volatile bool finalizarReproduccion = false; // Indica si se debe finalizar la música especial //AGG
-int modoMusicaActual = 0; //AGG
-int nivelMusicaActual = 0; //AGG
 
 // Configuracion de Pines del LED RGB 
 const int redPin = 5;
@@ -83,16 +80,6 @@ void tareaActualizarLCD(void *pvParameters);
 void tareaBotones(void *pvParameters);
 void tareaJuego(void *pvParameters);
 void TestHwm(char *taskName);
-void tareaReproduccionMusica(void *pvParameters); //AGG
-
-// Define el puerto UART para el DFPlayer Mini (usando los pines por defecto del ESP32)
-HardwareSerial mySerial(1); // Usa el puerto UART1 (puedes usar UART0, UART1 o UART2 en el ESP32)
-// Crea un objeto DFPlayer
-DFRobotDFPlayerMini myDFPlayer;
-// Variables globales para el control de reproducción
-int currentTrack = 0;       // Canción en reproducción actual
-bool shouldRepeat = false;  // Control para repetir la canción
-bool reproduciendo = false; // Estado de reproducción de música
 
 // Configuración del servomotor
 Servo servoMotor;
@@ -100,12 +87,22 @@ const int pinServo = 14; // Cambia esto al pin donde conectaste el servomotor
 const int posicionInicial = 52; // Posición inicial del servomotor
 const int posicionActivada = 180; // Posición final del servomotor
 
+
+void parpadearLED(int pin, int cantidadParpadeos, int duracion) {
+    for (int i = 0; i < cantidadParpadeos; i++) {
+        digitalWrite(pin, HIGH); // Enciende el LED
+        delay(duracion / 2);     // Espera la mitad del tiempo para un ciclo ON
+        digitalWrite(pin, LOW);  // Apaga el LED
+        delay(duracion / 2);     // Espera la otra mitad para un ciclo OFF
+    }
+}
+
 // Función para activar el servomotor
 void activarServo() {
   servoMotor.write(180); // Mueve el servo a 90 grados
-  delay(3000);           // Mantiene la posición durante 0.5 segundos
+  delay(2000);           // Mantiene la posición durante 0.5 segundos
   servoMotor.write(52);  // Retorna el servo a 0 grados
-  delay(3000);           // Pausa para estabilización
+  delay(1000);           // Pausa para estabilización
 }
 
 // Notas y duraciones para el tono de victoria de Mario Bros
@@ -139,16 +136,19 @@ const int gameOverDurations[] = {
 };
 
 void playMelody(const int melody[], const int durations[], int size) {
-  for (int i = 0; i < size; i++) {
-    int noteDuration = durations[i];
-    if (melody[i] == 0) {
-      delay(noteDuration);
-    } else {
-      tone(BUZZER_PIN, melody[i], noteDuration);
-      delay(noteDuration * 1.30); // Pausa entre notas
+    for (int i = 0; i < size; i++) {
+        int noteDuration = durations[i];
+
+        if (melody[i] == 0) {
+            // Silencio entre las notas
+            delay(noteDuration);
+        } else {
+            // Usa PWM para emitir la frecuencia de la nota
+            ledcWriteTone(3, melody[i]);
+            delay(noteDuration * 1.30); // Ajusta la duración de la nota
+            ledcWriteTone(3, 0); // Apaga el buzzer después de cada nota
+        }
     }
-  }
-  noTone(BUZZER_PIN); // Asegúrate de apagar el buzzer
 }
 
 
@@ -158,8 +158,7 @@ bool verificarSecuencia(int cantidadColores);
 void color();
 String detectarColor();
 void setColor(int rojo, int verde, int azul);
-void reproducirSonidoCorrecto();
-void reproducirSonidoError();
+
 void desplazarMensaje(const char* texto);
 String substringLCD(const char* texto, int inicio, int longitudVisible);
 void mensajeestatico(const char* msg1, const char* msg2);
@@ -168,7 +167,8 @@ void deteccionRapida();
 void secuenciaInfinita();
 void leer_botones();
 void activarServo();
-void iniciarMusicaNivel();
+void parpadearLED(int pin, int cantidadParpadeos, int duracion);
+
 
 void handleGetIP(){
   String ip = WiFi.localIP().toString();
@@ -202,8 +202,8 @@ void enviardatofirebase(){
   currentEpoch+=timeOffset;
   setTime(currentEpoch);
 
-  String formatoFecha = String(year())+"-"+MB_String(month())+"-"+String(day());
-  String formatoHora = String(hour())+":"+MB_String(minute())+":"+String(second()); 
+  String formatoFecha = String(year())+"-"+String(month())+"-"+String(day());
+  String formatoHora = String(hour())+":"+String(minute())+":"+String(second()); 
 
   json.set("Tiempo actual", formatoFecha + MB_String(" ") + formatoHora );
 
@@ -249,7 +249,12 @@ void setup() {
   // Configuración de pines de botones como entrada (Pull-Down)
   pinMode(BOTON_MODO, INPUT_PULLDOWN);
   pinMode(BOTON_JUGAR, INPUT_PULLDOWN);
-  //pinMode(BOTON_SENSAR, INPUT_PULLDOWN);
+
+  // Configuramos el pin como salida
+  pinMode(LED_ENCENDIDO, OUTPUT);
+  // Iniciamos apagando el LED
+  digitalWrite(LED_ENCENDIDO, LOW);
+
 
   firebaseConfig.host = FIREBASE_HOST;
   firebaseConfig.api_key = FIREBASE_AUTH;
@@ -271,38 +276,14 @@ void setup() {
   servoMotor.attach(pinServo);
   servoMotor.write(posicionInicial); // Inicializa el servomotor en la posición inicial
   
+  parpadearLED(LED_ENCENDIDO, 1, 3000);
   Serial.println("Juego iniciado");
   mensajeestatico("Juego iniciado" , " ");
 
-  // Configuración e inicialización del módulo Mp3
-  // Inicia la comunicación serial para el monitor (para depuración)
-  mySerial.begin(9600, SERIAL_8N1, 16, 17); // UART1: RX en GPIO16, TX en GPIO17
-  if (!myDFPlayer.begin(mySerial)) {
-    Serial.println("¡No se pudo encontrar el DFPlayer Mini!");
-    while (true);
-  }  
-  myDFPlayer.volume(30);  // Ajuste de volumen
-
-  pinMode(BUZZER_PIN, OUTPUT);
+  ledcSetup(3, 2000, 8); // Frecuencia 2 kHz, resolución 8 bits
+  ledcAttachPin(BUZZER_PIN, 3); // Asocia el canal al pin del buzzer
 }
 
-void tareaReproduccionMusica(void *pvParameters) { //AGGGGGG
-  for (;;) {
-    if (reproduccionActiva) {
-      if (finalizarReproduccion) {
-        myDFPlayer.playFolder(modoMusicaActual, nivelMusicaActual);
-        vTaskDelay(pdMS_TO_TICKS(5000)); // Espera mientras reproduce el sonido especial
-        finalizarReproduccion = false;
-      } else {
-        myDFPlayer.playFolder(modoMusicaActual, nivelMusicaActual);
-        vTaskDelay(pdMS_TO_TICKS(2000)); // Reproducción cíclica
-      }
-    } else {
-      myDFPlayer.stop();
-    }
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
-}
 
 // ********************* FUNCIONES DEL LED RGB **********************************
 //Funcion para controlar el LED RGB utilizando PWM
@@ -369,21 +350,23 @@ bool verificarSecuencia(int cantidadColores) {
     // Mostrar resultado
     Serial.print("Color detectado: "); Serial.print(colorDetectado);
     Serial.print(" | Color esperado: "); Serial.println(secuenciaColores[i]);
-
-    desplazarMensaje(("Color detectado: " + (MB_String(colorDetectado))).c_str());
+    mensajeestatico("Color detectado:", String(colorDetectado).c_str());
 
     if (colorDetectado == secuenciaColores[i]) {
+      //delay(4000);
+      playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
       int puntosGanados = (nivel == 1 ? 5 : (nivel == 2 ? 10 : 15));
       puntaje += puntosGanados;
-
       Serial.print("Correcto! Puntos ganados: "); Serial.println(puntosGanados);
-      mensajeestatico("Correcto!", ("Puntos: " + MB_String(puntosGanados)).c_str());
+      mensajeestatico("Correcto!", ("Puntos: " + String(puntosGanados)).c_str());
     } else {
-      mensajeestatico("Te equivocaste!", ("Puntaje: " + MB_String(puntaje)).c_str());
-      desplazarMensaje(("Color esperado: " + (MB_String(secuenciaColores[i]))).c_str());
-      Serial.print("¡Te equivocaste! Puntuación final: "); Serial.println(puntaje);
+      activarServo();
+      Serial.println("Reproduciendo tono de derrota...");
+      playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
       enviardatofirebase();
-
+      mensajeestatico("Te equivocaste!", ("Puntaje: " + String(puntaje)).c_str());
+      Serial.print("¡Te equivocaste! Puntuación final: "); Serial.println(puntaje);
+      
       // Reiniciar el juego
       puntaje = 0; 
       nivel = 1;  
@@ -393,7 +376,7 @@ bool verificarSecuencia(int cantidadColores) {
   }
 
   Serial.print("¡Nivel superado! Puntuación total: "); Serial.println(puntaje);
-  mensajeestatico("Nivel superado!", ("Puntaje final: " + MB_String(puntaje)).c_str()); 
+  mensajeestatico("Nivel superado!", ("Puntaje final: " + String(puntaje)).c_str()); 
   handlepuntos();
   enviardatofirebase();
   return true;  // Nivel completado correctamente
@@ -431,9 +414,7 @@ String detectarColor() {
     activarServo();
     return "Púrpura";
   }
-
   return "Desconocido"; // Retorna "Desconocido" si no detecta correctamente
-  activarServo();
 }
 
 // ********************* FUNCIONES DEL LCD **********************************
@@ -447,7 +428,7 @@ void desplazarMensaje(const char* texto) {
     // Imprime la porción del texto visible
     lcd.setCursor(0, 0);
     lcd.print(substringLCD(texto, i, espacios));
-    delay(300); // Velocidad del desplazamiento
+    delay(500); // Velocidad del desplazamiento
   }
 }
 
@@ -509,29 +490,7 @@ void mensajeestatico(const char* msg1, const char* msg2){
 }
 
 // ********************* FUNCIONES DEL MODULO MP3 **********************************
-//Función principal para repruducir una música
-// Función que reproduce música según el nivel
-void iniciarMusicaNivel() {
-  int archivo = nivel; // Cada nivel corresponde a un archivo: 001.mp3, 002.mp3, etc.
-  myDFPlayer.playFolder(1, archivo); // Reproduce archivo de la carpeta 01
-  reproduciendo = true;
-}
 
-// Función que detiene la música
-void detenerMusica() {
-  myDFPlayer.stop();
-  reproduciendo = false;
-}
-
-// Función que maneja el cambio de música al pasar de nivel
-void manejarMusicaNivel() {
-  static int nivelAnterior = 0;
-  if (nivel != nivelAnterior) { // Detectar cambio de nivel
-    detenerMusica();           // Detener música actual
-    iniciarMusicaNivel();      // Reproducir música del nuevo nivel
-    nivelAnterior = nivel;
-  }
-}
 
 // ********************* FUNCIONES DEL JUEGO **********************************
 // Función para cambiar de modo
@@ -555,7 +514,7 @@ void confirmarModo() {
     
   } 
   else if (modoJuego == 2) {
-    Serial.println("Detección Rápida");
+    Serial.println("Deteccion Rapida");
 
   }
   else if (modoJuego == 3) {
@@ -569,10 +528,6 @@ void juegoDeMemoria() {
   Serial.println("Modo 1: Juego de Memoria Iniciado.");
   mensajeestatico("Modo 1", "Iniciado...");
 
-  // Configurar reproducción de música //AGGGG
-  modoMusicaActual = 1;  // Carpeta 01 //AGGG
-  nivelMusicaActual = nivel;  // Archivo según el nivel actual //AGGG
-  reproduccionActiva = true; //AGGG
 
   // Bucle para avanzar entre niveles
   while (nivel <= 3) {
@@ -593,98 +548,100 @@ void juegoDeMemoria() {
     // Mostrar y verificar la secuencia
     mostrarSecuencia(cantidadColores);
     if (!verificarSecuencia(cantidadColores)) {
-      Serial.println("Reproduciendo tono de derrota...");
-      playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
-      delay(2000);
-      reproduccionActiva = false; //AGG
-      finalizarReproduccion = true; //AGG
-      nivelMusicaActual = 5;  // Archivo 5 (derrota) //AGG
       return;  // Salir si el jugador falla
     }
     // Si se supera el nivel, se avanza
     nivel++;
   }
-  // Reproducir música de victoria
-  playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
-  delay(2000);
-  reproduccionActiva = false; //AGG
-  finalizarReproduccion = true; //AGG
-  nivelMusicaActual = 4;  // Archivo 4 (victoria) //AGG
 
   // Mostrar mensaje de victoria total
   mensajeestatico("¡Juego Terminado!", ("Puntaje: " + MB_String(puntaje)).c_str());
+  playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
+  delay(2000);
   Serial.println("¡Juego Terminado!");
   handlepuntos();
   enviardatofirebase();
 }
 
-//////////// Modo 2: Detección Rápida ////////////
+
+//////////// Modo 2: Detecció Rápida ////////////
 void deteccionRapida() {
   Serial.println("Modo 2: Deteccion Rapida Iniciada.");
-  mensajeestatico("Modo 2" , "Iniciado...");
-
-  modoMusicaActual = 2;  // Carpeta 02 //AGG
-  nivelMusicaActual = 1;  // Archivo 001 //AGG
-  reproduccionActiva = true; //AGG
+  mensajeestatico("Modo 2", "Iniciado...");
 
   // Lógica del modo 2
-  int intentos = 5;  // Número de intentos permitidos
+  const int intentos = 5;  // Número de intentos permitidos
   for (int i = 0; i < intentos; i++) {
-    String colorObjetivo = coloresNivel[0][random(0, 3)];
+    // Seleccionar un color objetivo aleatorio entre los 9 colores
+    String colorObjetivo = coloresNivel[2][random(0, 9)];
     mensajeestatico("Coloca: ", colorObjetivo.c_str());
-    Serial.print("Coloca: "); Serial.println(colorObjetivo);
+    Serial.print("Coloca: ");
+    Serial.println(colorObjetivo);
 
     // Mostrar el color en el LED RGB
-    if (colorObjetivo == "Rojo") setColor(255, 0, 0);
-    else if (colorObjetivo == "Verde") setColor(0, 255, 0);
-    else if (colorObjetivo == "Azul") setColor(0, 0, 255);
+    if      (colorObjetivo == "Rojo")     setColor(255, 0, 0);
+    else if (colorObjetivo == "Verde")    setColor(0, 255, 0);
+    else if (colorObjetivo == "Azul")     setColor(0, 0, 255);
+    else if (colorObjetivo == "Amarillo") setColor(255, 255, 0);
+    else if (colorObjetivo == "Celeste")  setColor(0, 255, 255);
+    else if (colorObjetivo == "Rosado")   setColor(255, 20, 100);
+    else if (colorObjetivo == "Blanco")   setColor(255, 255, 255);
+    else if (colorObjetivo == "Naranja")  setColor(220, 84, 0);
+    else if (colorObjetivo == "Morado")   setColor(128, 0, 180);
 
-    unsigned long tiempoInicio = millis();
-    while (true) {
-      color();  // Leer color del sensor
-      String colorDetectado = detectarColor();
-      if (colorDetectado != "Desconocido") {
-        unsigned long tiempoRespuesta = millis() - tiempoInicio;
+    unsigned long tiempoInicio = millis();  // Tiempo de inicio del intento
+    String colorDetectado = "Desconocido";
 
-        if (colorDetectado == colorObjetivo) {
-          playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
-          int puntosGanados = max(15 - (int)(tiempoRespuesta / 10), 5);  // Puntaje según rapidez
-          puntaje += puntosGanados;
-
-          Serial.print("Correcto! Tiempo: ");
-          Serial.print(tiempoRespuesta); Serial.print(" ms | Puntos: ");
-          Serial.println(puntosGanados);
-          mensajeestatico("Correcto! ", ("Puntos: " + MB_String(puntosGanados)).c_str());
-        } else {
-          playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
-          Serial.println("Te equivocaste!");
-          mensajeestatico("Te equivocaste!", " ");
-        }
-        break;
+    // Detectar el color hasta que se identifique o se supere el tiempo máximo
+    while ((millis() - tiempoInicio) < 5000) {  // Máximo de 5 segundos por intento
+      color();  // Leer el color del sensor
+      String nuevoColor = detectarColor();
+      if (nuevoColor != "Desconocido") {
+        colorDetectado = nuevoColor;
+        break;  // Salir del bucle una vez detectado un color válido
       }
     }
-    delay(500);  // Pausa entre intentos
+
+    // Calcular tiempo de respuesta en segundos
+    float tiempoRespuesta = (millis() - tiempoInicio) / 1000.0;
+
+    // Verificar si el color detectado coincide con el objetivo
+    if (colorDetectado == colorObjetivo) {
+      // Calcular puntaje según la rapidez
+      float puntosGanados = max(10.0 - (0.5 * tiempoRespuesta), 0.0);  // Puntos decrecen 0.5 por segundo
+      puntaje += puntosGanados;
+
+      // Mostrar resultados
+      playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
+      Serial.print("Correcto! Tiempo: ");
+      Serial.print(tiempoRespuesta);
+      Serial.print(" segundos | Puntos: ");
+      Serial.println(puntosGanados);
+      mensajeestatico("Correcto!", ("Puntos: " + String(puntosGanados, 1)).c_str());
+    } else {
+      // Manejo del error
+      playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
+      Serial.println("Te equivocaste!");
+      mensajeestatico("Te equivocaste!", " ");
+    }
+
+    delay(1000);  // Pausa antes del siguiente intento
     setColor(0, 0, 0);  // Apagar LED
   }
-  
-  reproduccionActiva = false;  // Detener música al finalizar //AGG
 
-  mensajeestatico("Juego Finalizado!", ("Puntaje Total: " + MB_String(puntaje)).c_str());
+  // Mostrar puntaje final al terminar los intentos
+  mensajeestatico("Juego Finalizado!", ("Puntaje Total: " + String(puntaje)).c_str());
   Serial.println("Juego Finalizado!");
+  Serial.println("Puntaje Total: |" + puntaje);
   handlepuntos();
   enviardatofirebase();
-
 }
+
 
 //////////// Modo 3: Secuencia Infinita ////////////
 void secuenciaInfinita() {
   Serial.println("Modo 3: Secuencia Infinita Iniciada.");
   mensajeestatico("Modo 3" , "Iniciado...");
-
-  modoMusicaActual = 3;  // Carpeta 03 //AGG
-  nivelMusicaActual = 1;  // Archivo 001 //AGG
-  reproduccionActiva = true; //AGG
-
   // Lógica del modo 3
   bool jugando = true;
   while (jugando) {
@@ -701,32 +658,34 @@ void secuenciaInfinita() {
     else if (colorObjetivo == "Blanco") setColor(255, 255, 255);
     else if (colorObjetivo == "Naranja") setColor(220, 84, 0);
     else if (colorObjetivo == "Morado") setColor(128, 0, 180);
-    delay(2000);  // Tiempo de visualización
+    delay(3000);  // Tiempo de visualización
     setColor(0, 0, 0);  // Apagar LED
-    delay(2000);
+    delay(3000);
     // Leer la respuesta del jugador
     color();  // Leer el sensor
+    delay(2000);
     String colorDetectado = detectarColor();
     Serial.print("Color detectado: "); Serial.println(colorDetectado);
-    delay(2000);
     if (colorDetectado == colorObjetivo) {
       playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
       puntaje += 10;
-      mensajeestatico("Correcto!", ("Puntos: " + MB_String(puntaje)).c_str());
+      mensajeestatico("Correcto!", ("Puntos: " + String(puntaje)).c_str());
       Serial.println("Correcto!");
     } else {
+      activarServo();
       playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
       Serial.println("Te equivocaste!");
       mensajeestatico("Te equivocaste!", " ");
       jugando = false;  // Terminar el juego
     }
-    delay(1000);  // Pausa antes de la siguiente secuencia
+    delay(3000);  // Pausa antes de la siguiente secuencia
   }
 
-  reproduccionActiva = false;  // Detener música al finalizar // AGG
+  //reproduccionActiva = false;  // Detener música al finalizar // AGG
   
   mensajeestatico("Juego Terminado!", ("Puntaje Total: " + MB_String(puntaje)).c_str());
   Serial.println("Juego Terminado!");
+  Serial.println("Puntaje Total: |" + puntaje);
   handlepuntos();
   enviardatofirebase();
 }
