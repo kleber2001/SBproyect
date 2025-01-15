@@ -229,7 +229,6 @@ void setup() {
   server.begin();
   timeClient.begin();
 
-  xTaskCreate(tareaActualizarLCD, "tareaActualizarLCD", 2048, NULL, 1, NULL);
   xTaskCreate(tareaBotones, "Tarea Botones", 8192, NULL, 1, NULL);
   xTaskCreate(tareaJuego, "Tarea Juego", 8192, NULL, 1, NULL);
   pinMode(S0, OUTPUT); pinMode(S1, OUTPUT); pinMode(S2, OUTPUT); pinMode(S3, OUTPUT); pinMode(OUT, INPUT);
@@ -294,7 +293,6 @@ void setup() {
   lcd.print("Juego iniciado");
   lcd.setCursor(0,1);
   lcd.print("Sel. un modo...");
-  mensajeestatico("Juego iniciado" , " ");
 
   ledcSetup(3, 2000, 8); // Frecuencia 2 kHz, resolución 8 bits
   ledcAttachPin(BUZZER_PIN, 3); // Asocia el canal al pin del buzzer
@@ -413,7 +411,7 @@ String detectarColor() {
   } else if ( (rojo >=10 && rojo <=20) && (verde >=8  && verde <=16)  && (azul >=10 && azul <=22) ){
     activarServo();
     return "Verde";
-  } else if ( (rojo >=4  && rojo <=7) && (verde >=4  && verde <=7)  && (azul >=3  && azul <=6) ){
+  } else if ( (rojo >=1  && rojo <=7) && (verde >=4  && verde <=7)  && (azul >=3  && azul <=6) ){
     activarServo();
     return "Blanco";
   } else if ( (rojo >=3  && rojo <=7) && (verde >=4  && verde <=10)  && (azul >=10  && azul <=14) ){  
@@ -485,30 +483,6 @@ void puntajeLCD(const char* msg1, const char* msg2){
   delay(3000);
 
 }
-// Tarea para actualizar el mensaje en el LCD
-void tareaActualizarLCD(void *pvParameters) {
-    for (;;) {
-        if (actualizarModo) { // Verifica si hay un cambio en el modo
-            // Actualizar el mensaje correspondiente al modo
-            Serial.println("Actualizando LCD...");  // Depuración
-
-            switch (modoJuego) {
-                case 1:
-                    mensajeestatico("Modo 1:", "Juego de Memoria");
-                    break;
-                case 2:
-                    mensajeestatico("Modo 2:", "Detección Rápida");
-                    break;
-                case 3:
-                    mensajeestatico("Modo 3:", "Secuencia Infinita");
-                    break;
-            }
-            actualizarModo = false; // Resetea la bandera después de procesar
-        }
-        vTaskDelay(pdMS_TO_TICKS(100)); // Retardo pequeño para ceder control
-    }
-}
-
 
 // Función para mostrar un mensaje estático en toda la pantalla LCD
 void mensajeestatico(const char* msg1, const char* msg2){
@@ -721,6 +695,7 @@ void secuenciaInfinita() {
     else if (colorObjetivo == "Blanco") setColor(255, 255, 255);
     else if (colorObjetivo == "Naranja") setColor(220, 84, 0);
     else if (colorObjetivo == "Morado") setColor(128, 0, 180);
+    delay(3000);
     setColor(0, 0, 0);  // Apagar LED
     delay(3000);
     mensajeestatico("Verificando", "Color");
