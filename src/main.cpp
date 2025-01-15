@@ -84,7 +84,7 @@ void TestHwm(char *taskName);
 // Configuración del servomotor
 Servo servoMotor;
 const int pinServo = 14; // Cambia esto al pin donde conectaste el servomotor
-const int posicionInicial = 52; // Posición inicial del servomotor
+const int posicionInicial = 35; // Posición inicial del servomotor
 const int posicionActivada = 180; // Posición final del servomotor
 
 
@@ -101,7 +101,7 @@ void parpadearLED(int pin, int cantidadParpadeos, int duracion) {
 void activarServo() {
   servoMotor.write(180); // Mueve el servo a 90 grados
   delay(2000);           // Mantiene la posición durante 0.5 segundos
-  servoMotor.write(52);  // Retorna el servo a 0 grados
+  servoMotor.write(35);  // Retorna el servo a 0 grados
   delay(1000);           // Pausa para estabilización
 }
 
@@ -159,14 +159,16 @@ void color();
 String detectarColor();
 void setColor(int rojo, int verde, int azul);
 
-void desplazarMensaje(const char* texto);
 String substringLCD(const char* texto, int inicio, int longitudVisible);
 void mensajeestatico(const char* msg1, const char* msg2);
+void cambiarLCD(const char* msg1, const char* msg2);
+void puntajeLCD(const char* msg1, const char* msg2);
 void juegoDeMemoria();
 void deteccionRapida();
 void secuenciaInfinita();
 void leer_botones();
 void activarServo();
+void parpadeoLED(int cantidad);
 void parpadearLED(int pin, int cantidadParpadeos, int duracion);
 
 
@@ -217,8 +219,7 @@ void enviardatofirebase(){
 
 void setup() { 
   Serial.begin(115200);
-  intentoconexion("grupo2", "@admin123");
-
+  intentoconexion("grupo2sb", "@admin321");
   server.on("/", handleRoot);
   server.on("/getSelection", handleGetSelection);
   server.on("/getMode", handleGetMode);
@@ -237,7 +238,7 @@ void setup() {
   Wire.begin(21, 22); // Configura SDA y SCL
   lcd.init();        // Inicializa el LCD
   lcd.backlight();   // Activa la luz de fondo
-  
+    
   // Configuración de la frecuencia del sensor
   digitalWrite(S0, HIGH);
   digitalWrite(S1, HIGH);
@@ -247,6 +248,16 @@ void setup() {
   ledcSetup(0, 5000, 8); ledcSetup(1, 5000, 8); ledcSetup(2, 5000, 8);
   
   // Configuración de pines de botones como entrada (Pull-Down)
+  pinMode(BOTON_MODO, INPUT);
+  pinMode(BOTON_JUGAR, INPUT);
+
+  // Configuramos el pin como salida
+  pinMode(LED_ENCENDIDO, OUTPUT);
+  // Iniciamos apagando el LED
+  digitalWrite(LED_ENCENDIDO, LOW);
+
+
+
   pinMode(BOTON_MODO, INPUT_PULLDOWN);
   pinMode(BOTON_JUGAR, INPUT_PULLDOWN);
 
@@ -278,6 +289,11 @@ void setup() {
   
   parpadearLED(LED_ENCENDIDO, 1, 3000);
   Serial.println("Juego iniciado");
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Juego iniciado");
+  lcd.setCursor(0,1);
+  lcd.print("Sel. un modo...");
   mensajeestatico("Juego iniciado" , " ");
 
   ledcSetup(3, 2000, 8); // Frecuencia 2 kHz, resolución 8 bits
@@ -304,6 +320,7 @@ void mostrarSecuencia(int cantidadColores) {
     else if (secuenciaColores[i] == "Naranja")  setColor(220, 84, 0);    // Rojo alto, verde moderado, azul en 0
     else if (secuenciaColores[i] == "Morado")   setColor(128, 0, 180);   // Rojo y azul moderados, verde en 0
     delay(delayColor);
+    mensajeestatico(("Color: ", secuenciaColores[i].c_str()),"Espere..." );
     setColor(0, 0, 0); // Apaga el LED antes de mostrar el siguiente color
     delay(1000);
   }
@@ -334,6 +351,7 @@ bool verificarSecuencia(int cantidadColores) {
   for (int i = 0; i < cantidadColores; i++) {
     Serial.println("Pasa el color correspondiente...");
     mensajeestatico("Pasa el color", "correspondiente...");
+    delay(3000);
 
     String colorDetectado = "Desconocido";
     unsigned long tiempoInicio = millis();
@@ -346,7 +364,6 @@ bool verificarSecuencia(int cantidadColores) {
         colorDetectado = nuevoColor; 
       }
     }
-
     // Mostrar resultado
     Serial.print("Color detectado: "); Serial.print(colorDetectado);
     Serial.print(" | Color esperado: "); Serial.println(secuenciaColores[i]);
@@ -354,11 +371,12 @@ bool verificarSecuencia(int cantidadColores) {
 
     if (colorDetectado == secuenciaColores[i]) {
       //delay(4000);
+      parpadeoLED(4);
       playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
       int puntosGanados = (nivel == 1 ? 5 : (nivel == 2 ? 10 : 15));
       puntaje += puntosGanados;
       Serial.print("Correcto! Puntos ganados: "); Serial.println(puntosGanados);
-      mensajeestatico("Correcto!", ("Puntos: " + String(puntosGanados)).c_str());
+      mensajeestatico("Correcto!", ("Puntos: " + MB_String(puntosGanados)).c_str());
     } else {
       activarServo();
       Serial.println("Reproduciendo tono de derrota...");
@@ -376,6 +394,7 @@ bool verificarSecuencia(int cantidadColores) {
   }
 
   Serial.print("¡Nivel superado! Puntuación total: "); Serial.println(puntaje);
+  puntajeLCD("Nivel superado!", ("Puntaje final:" + String(puntaje)).c_str());
   mensajeestatico("Nivel superado!", ("Puntaje final: " + String(puntaje)).c_str()); 
   handlepuntos();
   enviardatofirebase();
@@ -385,53 +404,36 @@ bool verificarSecuencia(int cantidadColores) {
 // Funcion asignar un string dependiendo del color detectado por el sensor
 String detectarColor() {
   color(); // Función para actualizar los valores de color (rojo, verde, azul)
-
-  if ((rojo >= 9 && rojo <= 11) && (verde >= 27 && verde <= 30) && (azul >= 11 && azul <= 25)) {
-    activarServo(); // Mover a 52 grados
+  if ( (rojo >=8  && rojo <=10) && (verde >=18 && verde <=22) && (azul >=11  && azul <=17) )    {
+    activarServo();
     return "Rojo";
-  } else if ((rojo >= 24 && rojo <= 25) && (verde >= 16 && verde <= 17) && (azul >= 9 && azul <= 10)) {
+  } else if ( (rojo >=15 && rojo <=23) && (verde >=13  && verde <=18) && (azul >=6 && azul <=10) ){
     activarServo();
     return "Azul";
-  } else if ((rojo >= 12 && rojo <= 14) && (verde >= 8 && verde <= 10) && (azul >= 11 && azul <= 13)) {
+  } else if ( (rojo >=10 && rojo <=20) && (verde >=8  && verde <=16)  && (azul >=10 && azul <=22) ){
     activarServo();
     return "Verde";
-  } else if ((rojo >= 5 && rojo <= 6) && (verde >= 7 && verde <= 9) && (azul >= 13 && azul <= 14)) {
-    activarServo();
-    return "Amarillo";
-  } else if ((rojo >= 16 && rojo <= 18) && (verde >= 10 && verde <= 12) && (azul >= 6 && azul <= 8)) {
-    activarServo();
-    return "Celeste";
-  } else if ((rojo >= 5 && rojo <= 6) && (verde >= 14 && verde <= 16) && (azul >= 8 && azul <= 9)) {
-    activarServo();
-    return "Rosado";
-  } else if ((rojo >= 12 && rojo <= 14) && (verde >= 8 && verde <= 10) && (azul >= 11 && azul <= 13)) {
+  } else if ( (rojo >=4  && rojo <=7) && (verde >=4  && verde <=7)  && (azul >=3  && azul <=6) ){
     activarServo();
     return "Blanco";
-  } else if ((rojo >= 7 && rojo <= 8) && (verde >= 22 && verde <= 23) && (azul >= 19 && azul <= 20)) {
+  } else if ( (rojo >=3  && rojo <=7) && (verde >=4  && verde <=10)  && (azul >=10  && azul <=14) ){  
+    activarServo();
+    return "Amarillo";
+  } else if ( (rojo >=10 && rojo <=16) && (verde >=8  && verde <=12)  && (azul >=6 && azul <=8) ){ 
+    activarServo();
+    return "Celeste";
+  } else if ( (rojo >=9  && rojo <=12) && (verde >=17  && verde <=19)  && (azul >=10  && azul <=12) ){
+    activarServo();
+    return "Morado";
+  } else if ( (rojo >=5  && rojo <=7) && (verde >=14  && verde <=20)  && (azul >=10 && azul <=13) ){
     activarServo();
     return "Naranja";
-  } else if ((rojo >= 9 && rojo <= 11) && (verde >= 21 && verde <= 24) && (azul >= 11 && azul <= 13)) {
+  } else if ( (rojo >=5 && rojo <=8) && (verde >=11  && verde <=15)  && (azul >=7 && azul <=15) ){
     activarServo();
-    return "Púrpura";
+    return "Rosado";
   }
-  return "Desconocido"; // Retorna "Desconocido" si no detecta correctamente
+  return "Desconocido";
 }
-
-// ********************* FUNCIONES DEL LCD **********************************
-//Funciones para mostrar un mensaje desplzandose en el LCD
-void desplazarMensaje(const char* texto) {
-  int longitud = strlen(texto); // Calcula la longitud del mensaje
-  int espacios = 16;           // Espacios visibles en la pantalla
-
-  for (int i = 0; i < longitud + espacios; i++) {
-    lcd.clear();
-    // Imprime la porción del texto visible
-    lcd.setCursor(0, 0);
-    lcd.print(substringLCD(texto, i, espacios));
-    delay(500); // Velocidad del desplazamiento
-  }
-}
-
 // Función para extraer una subcadena visible en el LCD
 String substringLCD(const char* texto, int inicio, int longitudVisible) {
   String subcadena = "";
@@ -450,6 +452,39 @@ String substringLCD(const char* texto, int inicio, int longitudVisible) {
   return subcadena;
 }
 
+void mostrarModoEnLCD(int modoActual) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Modo Actual:");
+  lcd.setCursor(0, 1);
+
+  // Cambia el mensaje según el modo
+  switch (modoActual) {
+    case 1:
+      lcd.print("Juego de Memoria");
+      break;
+    case 2:
+      lcd.print("Deteccion Rapida");
+      break;
+    case 3:
+      lcd.print("Seq. infinita");
+      break;
+    default:
+      lcd.print(" ");
+      break;
+  }
+  
+}
+
+void puntajeLCD(const char* msg1, const char* msg2){
+
+  lcd.setCursor(0, 0); // Columna 3, Fila 0
+  lcd.print(msg1);
+  lcd.setCursor(0, 1); // Columna 2, Fila 1
+  lcd.print(msg2);
+  delay(3000);
+
+}
 // Tarea para actualizar el mensaje en el LCD
 void tareaActualizarLCD(void *pvParameters) {
     for (;;) {
@@ -460,15 +495,12 @@ void tareaActualizarLCD(void *pvParameters) {
             switch (modoJuego) {
                 case 1:
                     mensajeestatico("Modo 1:", "Juego de Memoria");
-                    desplazarMensaje("Juego de Memoria");
                     break;
                 case 2:
                     mensajeestatico("Modo 2:", "Detección Rápida");
-                    desplazarMensaje("Detección Rápida");
                     break;
                 case 3:
                     mensajeestatico("Modo 3:", "Secuencia Infinita");
-                    desplazarMensaje("Secuencia Infinita");
                     break;
             }
             actualizarModo = false; // Resetea la bandera después de procesar
@@ -476,6 +508,7 @@ void tareaActualizarLCD(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(100)); // Retardo pequeño para ceder control
     }
 }
+
 
 // Función para mostrar un mensaje estático en toda la pantalla LCD
 void mensajeestatico(const char* msg1, const char* msg2){
@@ -485,14 +518,27 @@ void mensajeestatico(const char* msg1, const char* msg2){
   lcd.print(msg1);
   lcd.setCursor(0, 1); // Columna 2, Fila 1
   lcd.print(msg2);
-  delay(500);
+  delay(1500);
   lcd.clear(); // Limpia la pantalla
 }
 
-// ********************* FUNCIONES DEL MODULO MP3 **********************************
+void cambiarLCD(const char* msg1, const char* msg2){
+  lcd.setCursor(0, 0); // Columna 3, Fila 0
+  lcd.print(msg1);
+  lcd.setCursor(0, 1); // Columna 2, Fila 1
+  lcd.print(msg2);
+}
 
 
-// ********************* FUNCIONES DEL JUEGO **********************************
+void parpadeoLED (int cantidad){
+  for (int j = 0; j < cantidad; j++) { // Parpadea 6 veces (3 ciclos completos)
+    digitalWrite(LED_ENCENDIDO, HIGH); // Encender el LED
+    delay(100); // Mantenerlo encendido por 200 ms
+    digitalWrite(LED_ENCENDIDO, LOW);  // Apagar el LED
+    delay(100); // Mantenerlo apagado por 200 ms
+    }
+}
+
 // Función para cambiar de modo
 void cambiarModo() {
   modoJuego++;
@@ -502,6 +548,7 @@ void cambiarModo() {
   // Mostrar el modo seleccionado
     Serial.print("Modo cambiado a: ");
     Serial.println(modoJuego);
+    mostrarModoEnLCD(modoJuego);
     actualizarModo = true;            // Señal para que las tareas actúen
 
 }
@@ -530,9 +577,9 @@ void juegoDeMemoria() {
 
 
   // Bucle para avanzar entre niveles
-  while (nivel <= 3) {
+  while (nivel <= 2) {
     //manejarMusicaNivel();
-    int cantidadColores = (nivel == 1) ? 3 : (nivel == 2) ? 6 : 9;
+    int cantidadColores = (nivel == 1) ? 3 : 6;
     mensajeestatico("Nivel: ", String(nivel).c_str());
     Serial.print("Nivel "); Serial.println(nivel);
     mensajeestatico("Secuencia de", "colores...");
@@ -547,6 +594,7 @@ void juegoDeMemoria() {
     Serial.println();
     // Mostrar y verificar la secuencia
     mostrarSecuencia(cantidadColores);
+
     if (!verificarSecuencia(cantidadColores)) {
       return;  // Salir si el jugador falla
     }
@@ -555,12 +603,15 @@ void juegoDeMemoria() {
   }
 
   // Mostrar mensaje de victoria total
-  mensajeestatico("¡Juego Terminado!", ("Puntaje: " + MB_String(puntaje)).c_str());
+  parpadeoLED(4);
   playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
+  puntajeLCD("Juego Terminado!", ("Puntaje Total:" + MB_String(puntaje)).c_str());
+  mensajeestatico("¡Juego Terminado!", ("Puntaje: " + MB_String(puntaje)).c_str());
   delay(2000);
   Serial.println("¡Juego Terminado!");
   handlepuntos();
   enviardatofirebase();
+  cambiarLCD("Cambiar Modo o", "Reiniciar Modo");
 }
 
 
@@ -568,8 +619,11 @@ void juegoDeMemoria() {
 void deteccionRapida() {
   Serial.println("Modo 2: Deteccion Rapida Iniciada.");
   mensajeestatico("Modo 2", "Iniciado...");
-
   // Lógica del modo 2
+  int intentosRestantes = 3;  // Número de intentos permitidos
+  mensajeestatico("Intentos: ", String(intentosRestantes).c_str());
+
+  while (intentosRestantes > 0) {  // Continuar mientras queden intentos
   const int intentos = 5;  // Número de intentos permitidos
   for (int i = 0; i < intentos; i++) {
     // Seleccionar un color objetivo aleatorio entre los 9 colores
@@ -588,7 +642,10 @@ void deteccionRapida() {
     else if (colorObjetivo == "Blanco")   setColor(255, 255, 255);
     else if (colorObjetivo == "Naranja")  setColor(220, 84, 0);
     else if (colorObjetivo == "Morado")   setColor(128, 0, 180);
-
+    delay(3000);  // Espera de 3 segundos
+    mensajeestatico("Verificando", "Color");
+    mensajeestatico("Por favor", "Espera...");
+    // Esperar 3 segundos para colocar la ficha en el sensor
     unsigned long tiempoInicio = millis();  // Tiempo de inicio del intento
     String colorDetectado = "Desconocido";
 
@@ -612,12 +669,14 @@ void deteccionRapida() {
       puntaje += puntosGanados;
 
       // Mostrar resultados
+      parpadeoLED(4);
       playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
       Serial.print("Correcto! Tiempo: ");
       Serial.print(tiempoRespuesta);
       Serial.print(" segundos | Puntos: ");
       Serial.println(puntosGanados);
-      mensajeestatico("Correcto!", ("Puntos: " + String(puntosGanados, 1)).c_str());
+      mensajeestatico("Correcto!", ("Puntos: " + MB_String(puntosGanados, 1)).c_str());
+      mensajeestatico("Continue...", " ");
     } else {
       // Manejo del error
       playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
@@ -630,12 +689,16 @@ void deteccionRapida() {
   }
 
   // Mostrar puntaje final al terminar los intentos
-  mensajeestatico("Juego Finalizado!", ("Puntaje Total: " + String(puntaje)).c_str());
+  puntajeLCD("Juego Terminado!", ("Puntaje Total:" + MB_String(puntaje)).c_str());
   Serial.println("Juego Finalizado!");
-  Serial.println("Puntaje Total: |" + puntaje);
+  Serial.println("Puntaje Total " + String(puntaje));
   handlepuntos();
   enviardatofirebase();
+  cambiarLCD("Cambiar Modo o", "Reiniciar Modo");
+  }
+
 }
+
 
 
 //////////// Modo 3: Secuencia Infinita ////////////
@@ -658,24 +721,29 @@ void secuenciaInfinita() {
     else if (colorObjetivo == "Blanco") setColor(255, 255, 255);
     else if (colorObjetivo == "Naranja") setColor(220, 84, 0);
     else if (colorObjetivo == "Morado") setColor(128, 0, 180);
-    delay(3000);  // Tiempo de visualización
     setColor(0, 0, 0);  // Apagar LED
     delay(3000);
+    mensajeestatico("Verificando", "Color");
+    mensajeestatico("Por favor", "Espera...");
+
     // Leer la respuesta del jugador
     color();  // Leer el sensor
     delay(2000);
     String colorDetectado = detectarColor();
     Serial.print("Color detectado: "); Serial.println(colorDetectado);
+    mensajeestatico("Color detectado", String(colorDetectado).c_str());
     if (colorDetectado == colorObjetivo) {
+      parpadeoLED(4);
       playMelody(victoryMelody, victoryDurations, sizeof(victoryMelody) / sizeof(victoryMelody[0]));
       puntaje += 10;
       mensajeestatico("Correcto!", ("Puntos: " + String(puntaje)).c_str());
-      Serial.println("Correcto!");
+      mensajeestatico("Continue...", " ");
     } else {
       activarServo();
       playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
       Serial.println("Te equivocaste!");
       mensajeestatico("Te equivocaste!", " ");
+      puntajeLCD("Juego Terminado!", ("Puntaje Total:" + MB_String(puntaje)).c_str());
       jugando = false;  // Terminar el juego
     }
     delay(3000);  // Pausa antes de la siguiente secuencia
@@ -683,11 +751,14 @@ void secuenciaInfinita() {
 
   //reproduccionActiva = false;  // Detener música al finalizar // AGG
   
-  mensajeestatico("Juego Terminado!", ("Puntaje Total: " + MB_String(puntaje)).c_str());
+  puntajeLCD("Juego Terminado!", ("Puntaje Total:" + MB_String(puntaje)).c_str());
   Serial.println("Juego Terminado!");
-  Serial.println("Puntaje Total: |" + puntaje);
+  Serial.println("Puntaje Total " + String(puntaje));
   handlepuntos();
   enviardatofirebase();
+  cambiarLCD("Cambiar Modo o", "Reiniciar Modo");
+  
+
 }
 
 // Función para iniciar el juego según el modo
@@ -719,11 +790,12 @@ void TestHwm(char *taskName){
 } 
 
 void tareaBotones(void *pvParameters) {
-  pinMode(BOTON_JUGAR, INPUT_PULLDOWN);
-  pinMode(BOTON_MODO, INPUT_PULLDOWN);
+  pinMode(BOTON_JUGAR, INPUT);
+  pinMode(BOTON_MODO, INPUT);
 
   bool botonModoPresionado = false;
   bool botonJugarPresionado = false;
+
 
   for (;;) {
     bool lecturaBotonModo = digitalRead(BOTON_MODO);
@@ -736,6 +808,7 @@ void tareaBotones(void *pvParameters) {
     if (!lecturaBotonModo && botonModoPresionado) {
       botonModoPresionado = false;
       cambiarModo();
+
     }
 
     // Detectar transición de bajo a alto para confirmar modo
