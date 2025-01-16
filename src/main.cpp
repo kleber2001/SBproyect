@@ -595,13 +595,11 @@ void juegoDeMemoria() {
 void deteccionRapida() {
   Serial.println("Modo 2: Deteccion Rapida Iniciada.");
   mensajeestatico("Modo 2", "Iniciado...");
-  // Lógica del modo 2
-  int intentosRestantes = 3;  // Número de intentos permitidos
+  
+  int intentosRestantes = 3;  // Número de intentos totales permitidos
   mensajeestatico("Intentos: ", String(intentosRestantes).c_str());
 
   while (intentosRestantes > 0) {  // Continuar mientras queden intentos
-  const int intentos = 5;  // Número de intentos permitidos
-  for (int i = 0; i < intentos; i++) {
     // Seleccionar un color objetivo aleatorio entre los 9 colores
     String colorObjetivo = coloresNivel[2][random(0, 9)];
     mensajeestatico("Coloca: ", colorObjetivo.c_str());
@@ -618,10 +616,10 @@ void deteccionRapida() {
     else if (colorObjetivo == "Blanco")   setColor(255, 255, 255);
     else if (colorObjetivo == "Naranja")  setColor(220, 84, 0);
     else if (colorObjetivo == "Morado")   setColor(128, 0, 180);
+
     delay(3000);  // Espera de 3 segundos
     mensajeestatico("Verificando", "Color");
     mensajeestatico("Por favor", "Espera...");
-    // Esperar 3 segundos para colocar la ficha en el sensor
     unsigned long tiempoInicio = millis();  // Tiempo de inicio del intento
     String colorDetectado = "Desconocido";
 
@@ -654,10 +652,17 @@ void deteccionRapida() {
       mensajeestatico("Correcto!", ("Puntos: " + MB_String(puntosGanados, 1)).c_str());
       mensajeestatico("Continue...", " ");
     } else {
-      // Manejo del error
+      // Manejo del error: restar un intento
+      intentosRestantes--;
       playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
       Serial.println("Te equivocaste!");
-      mensajeestatico("Te equivocaste!", " ");
+      mensajeestatico("Te equivocaste!", ("Intentos restantes: " + String(intentosRestantes)).c_str());
+
+      if (intentosRestantes == 0) {
+        // Terminar el juego si ya no hay intentos restantes
+        Serial.println("No quedan intentos.");
+        break;
+      }
     }
 
     delay(1000);  // Pausa antes del siguiente intento
@@ -667,12 +672,10 @@ void deteccionRapida() {
   // Mostrar puntaje final al terminar los intentos
   puntajeLCD("Juego Terminado!", ("Puntaje Total:" + MB_String(puntaje)).c_str());
   Serial.println("Juego Finalizado!");
-  Serial.println("Puntaje Total " + String(puntaje));
+  Serial.println("Puntaje Total: " + String(puntaje));
   handlepuntos();
   enviardatofirebase();
   cambiarLCD("Cambiar Modo o", "Reiniciar Modo");
-  }
-
 }
 
 
