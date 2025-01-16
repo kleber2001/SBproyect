@@ -381,6 +381,8 @@ bool verificarSecuencia(int cantidadColores) {
       playMelody(gameOverMelody, gameOverDurations, sizeof(gameOverMelody) / sizeof(gameOverMelody[0]));
       enviardatofirebase();
       mensajeestatico("Te equivocaste!", ("Puntaje: " + String(puntaje)).c_str());
+      cambiarLCD("Cambiar Modo o", "Reiniciar Modo");
+
       Serial.print("¡Te equivocaste! Puntuación final: "); Serial.println(puntaje);
       
       // Reiniciar el juego
