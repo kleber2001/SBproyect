@@ -36,6 +36,7 @@ El juguete didáctico propuesto ofrece una experiencia interactiva y fácil de u
 
 ## Diagrama de Contexto
 
+![Diagrama de Contexto](recursos/DiagramaContexto.png)
 
 
 ---
