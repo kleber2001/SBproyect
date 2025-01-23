@@ -43,20 +43,19 @@ El juguete didáctico propuesto ofrece una experiencia interactiva y fácil de u
 
 ## Diagrama de Bloques del Diseño
 
-*(Insertar diagrama aquí)*
+![Diagrama de Bloques](recursos/DiagramaBloques.png)
 
 ---
 
 ## Diagrama de Software
 
-*(Insertar diagrama aquí)*
+![Diagrama de Software](recursos/MáquinaEstado.png)
 
 ---
 
 ## Diagrama/Diseño de Interfaces
 
-*(Insertar diseño aquí)*
-
+![Diagrama de Interfaces](recursos/DiagramaInterfaces.png)
 ---
 
 ## Alternativas de Diseño
